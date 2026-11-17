@@ -1,16 +1,19 @@
 import { db } from "@/lib/db";
-import { getProduct, getVariantStock } from "@/lib/cj/client";
+import { getProduct, variantStock } from "@/lib/cj/client";
 import { usdToEur } from "@/lib/cj/currency";
+import { useDbTokenCache } from "@/lib/cj/token-cache";
 import { bulkUpdatePriceQuantity, type PriceQuantityUpdate } from "@/lib/ebay/inventory";
 import { getUserAccessToken } from "@/lib/ebay/token-store";
 import { computeSellPrice, rulesFromEnv } from "@/lib/pricing";
 import { listedQuantity } from "./publish-product";
 
 /**
- * Relit stock et prix chez CJ pour chaque annonce en ligne,
- * puis pousse les changements sur eBay. Rupture fournisseur => quantité 0.
+ * Relit stock et prix chez CJ pour chaque annonce en ligne (1 appel CJ par produit,
+ * toutes variantes comprises), puis pousse les changements sur eBay.
+ * Rupture fournisseur ou variante supprimée => quantité 0.
  */
 export async function syncStock() {
+  useDbTokenCache();
   const { data: products, error } = await db().from("products").select("*").eq("status", "listed");
   if (error) throw error;
 
@@ -22,10 +25,10 @@ export async function syncStock() {
   for (const p of products ?? []) {
     report.checked++;
     try {
-      const stock = await getVariantStock(p.cj_vid);
       if (!productCache.has(p.cj_pid)) productCache.set(p.cj_pid, await getProduct(p.cj_pid));
       const variant = productCache.get(p.cj_pid)!.variants.find((v) => v.vid === p.cj_vid);
-      const quantity = variant ? listedQuantity(stock) : 0; // variante supprimée chez CJ => on coupe
+      const stock = variant ? variantStock(variant, p.ship_from) : 0;
+      const quantity = listedQuantity(stock);
       const cost = variant ? usdToEur(variant.variantSellPrice) : Number(p.cost_eur);
       const price = computeSellPrice(cost, Number(p.shipping_eur), rules).price;
 
@@ -35,7 +38,7 @@ export async function syncStock() {
       }
       await db()
         .from("products")
-        .update({ stock: variant ? stock : 0, cost_eur: cost, price_eur: price, last_synced_at: new Date().toISOString() })
+        .update({ stock, cost_eur: cost, price_eur: price, last_synced_at: new Date().toISOString() })
         .eq("id", p.id);
     } catch (e) {
       report.errors.push(`${p.sku}: ${String(e)}`);

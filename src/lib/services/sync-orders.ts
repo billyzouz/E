@@ -1,10 +1,11 @@
 import { db } from "@/lib/db";
 import { createOrder, getOrderDetail } from "@/lib/cj/client";
+import { useDbTokenCache } from "@/lib/cj/token-cache";
 import { getOrdersToShip, markShipped, type EbayOrder } from "@/lib/ebay/fulfillment";
 import { getUserAccessToken } from "@/lib/ebay/token-store";
 
 /** Code transporteur eBay à partir du nom de transport CJ. "Other" si inconnu. */
-export function carrierCode(logisticName: string | undefined): string {
+export function carrierCode(logisticName: string | null | undefined): string {
   const n = (logisticName ?? "").toLowerCase();
   if (n.includes("yanwen")) return "Yanwen";
   if (n.includes("4px")) return "4PX";
@@ -13,6 +14,15 @@ export function carrierCode(logisticName: string | undefined): string {
   if (n.includes("colissimo")) return "Colissimo";
   if (n.includes("dhl")) return "DHL";
   return "Other";
+}
+
+/** "FR" → "France" (CJ demande le nom du pays en plus du code). */
+export function countryName(code: string): string {
+  try {
+    return new Intl.DisplayNames(["en"], { type: "region" }).of(code) ?? code;
+  } catch {
+    return code;
+  }
 }
 
 /** Étape 1 : chaque nouvelle commande eBay payée devient une commande CJ. */
@@ -54,35 +64,50 @@ async function forwardNewOrders(token: string) {
 /** Renvoie l'ID de commande CJ, ou null si la commande doit être traitée à la main. */
 async function placeCjOrder(o: EbayOrder): Promise<string | null> {
   const skus = o.lineItems.map((l) => l.sku).filter((s): s is string => !!s);
-  const { data: products } = await db().from("products").select("sku, cj_vid, logistic_name").in("sku", skus);
+  const { data: products } = await db()
+    .from("products")
+    .select("sku, cj_vid, logistic_name, ship_from")
+    .in("sku", skus);
   const bySku = new Map((products ?? []).map((p) => [p.sku, p]));
 
-  if (skus.length !== o.lineItems.length || skus.some((s) => !bySku.has(s))) {
-    await db()
-      .from("orders")
-      .update({ status: "manual", last_error: "Article sans SKU connu : à commander à la main" })
-      .eq("ebay_order_id", o.orderId);
+  const toManual = async (reason: string) => {
+    await db().from("orders").update({ status: "manual", last_error: reason }).eq("ebay_order_id", o.orderId);
     return null;
+  };
+  if (skus.length !== o.lineItems.length || skus.some((s) => !bySku.has(s))) {
+    return toManual("Article sans SKU connu : à commander à la main");
   }
+  const warehouses = new Set(skus.map((s) => bySku.get(s)!.ship_from));
+  if (warehouses.size > 1) return toManual("Articles d'entrepôts CJ différents : à commander à la main");
 
   const shipTo = o.fulfillmentStartInstructions[0]?.shippingStep.shipTo;
   if (!shipTo) throw new Error("Adresse de livraison absente");
   const a = shipTo.contactAddress;
+  const first = bySku.get(skus[0])!;
 
   const res = await createOrder({
     orderNumber: o.orderId,
     shippingCountryCode: a.countryCode,
-    shippingProvince: a.stateOrProvince,
+    shippingCountry: countryName(a.countryCode),
+    shippingProvince: a.stateOrProvince || a.city, // obligatoire chez CJ, souvent vide sur eBay France
     shippingCity: a.city,
     shippingAddress: a.addressLine1,
     shippingAddress2: a.addressLine2,
     shippingZip: a.postalCode,
     shippingCustomerName: shipTo.fullName,
     shippingPhone: shipTo.primaryPhone?.phoneNumber,
-    fromCountryCode: process.env.CJ_FROM_COUNTRY || "CN",
-    logisticName: bySku.get(skus[0])!.logistic_name,
-    products: o.lineItems.map((l) => ({ vid: bySku.get(l.sku!)!.cj_vid, quantity: l.quantity })),
+    fromCountryCode: first.ship_from,
+    logisticName: first.logistic_name,
+    payType: process.env.CJ_AUTO_PAY === "true" ? 2 : 3,
+    products: o.lineItems.map((l) => ({
+      vid: bySku.get(l.sku!)!.cj_vid,
+      quantity: l.quantity,
+      storeLineItemId: l.lineItemId,
+    })),
   });
+  if (res.interceptOrderReasons?.length) {
+    throw new Error(`CJ a bloqué la commande : ${res.interceptOrderReasons.map((r) => r.message).join(" ; ")}`);
+  }
   return res.orderId;
 }
 
@@ -117,6 +142,7 @@ async function pushTracking(token: string) {
 }
 
 export async function syncOrders() {
+  useDbTokenCache();
   const token = await getUserAccessToken();
   return { incoming: await forwardNewOrders(token), tracking: await pushTracking(token) };
 }
