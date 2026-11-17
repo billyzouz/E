@@ -1,0 +1,12 @@
+:root { color-scheme: light dark; font-family: system-ui, sans-serif; }
+body { margin: 0; padding: 24px; max-width: 1100px; margin-inline: auto; line-height: 1.5; }
+h1 { margin-top: 0; }
+section { margin-bottom: 32px; }
+table { width: 100%; border-collapse: collapse; font-size: 14px; }
+th, td { text-align: left; padding: 8px; border-bottom: 1px solid #8884; }
+.badge { padding: 2px 8px; border-radius: 999px; font-size: 12px; background: #8882; }
+.ok { color: #1a7f37; } .ko { color: #cf222e; }
+form { display: flex; gap: 8px; }
+input { flex: 1; padding: 8px; }
+button { padding: 8px 16px; cursor: pointer; }
+.muted { opacity: 0.7; }
