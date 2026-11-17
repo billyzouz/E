@@ -141,6 +141,44 @@ export function getProduct(pid: string) {
   return cjFetch<CjProduct>(`/product/query?pid=${encodeURIComponent(pid)}`);
 }
 
+interface CjInventoryRow {
+  countryCode: string;
+  totalInventory?: number;
+  totalInventoryNum?: number;
+}
+
+/** Stock de toutes les variantes d'un produit, par pays d'entrepôt (1 appel). */
+export function getProductInventory(pid: string) {
+  return cjFetch<{
+    inventories?: CjInventoryRow[];
+    variantInventories?: { vid: string; inventory?: CjInventoryRow[] }[];
+  }>(`/product/stock/getInventoryByPid?pid=${encodeURIComponent(pid)}`);
+}
+
+const normalize = (rows: CjInventoryRow[] | undefined): CjInventory[] =>
+  (rows ?? []).map((r) => ({ countryCode: r.countryCode, totalInventory: r.totalInventory ?? r.totalInventoryNum ?? 0 }));
+
+/**
+ * Fiche produit + stock par variante. La fiche seule ne contient pas toujours le stock :
+ * on le complète avec l'appel d'inventaire (2 appels CJ au total).
+ */
+export async function getProductWithStock(pid: string): Promise<CjProduct> {
+  const product = await getProduct(pid);
+  const inv = await getProductInventory(product.pid || pid);
+  const byVid = new Map((inv.variantInventories ?? []).map((v) => [v.vid, normalize(v.inventory)]));
+
+  for (const v of product.variants) {
+    const fromInventory = byVid.get(v.vid);
+    if (fromInventory?.length) v.inventories = fromInventory;
+    else if (v.inventories?.length) v.inventories = normalize(v.inventories as CjInventoryRow[]);
+  }
+  // Produit à variante unique sans détail par variante : on prend le stock global du produit
+  if (product.variants.length === 1 && !product.variants[0].inventories?.length) {
+    product.variants[0].inventories = normalize(inv.inventories);
+  }
+  return product;
+}
+
 /** Récupère l'ID produit depuis un lien CJ (ex …/product/xxx-p-1234ABCD.html) ou renvoie la valeur telle quelle. */
 export function extractPid(input: string): string {
   const m = input.match(/-p-([A-Za-z0-9-]+)\.html/);

@@ -66,6 +66,51 @@ describe("cjFetch", () => {
   });
 });
 
+describe("getProductWithStock", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    vi.resetModules();
+  });
+
+  it("complète le stock des variantes avec l'appel d'inventaire", async () => {
+    process.env.CJ_API_KEY = "k";
+    process.env.CJ_MIN_GAP_MS = "1";
+    vi.stubGlobal("fetch", async (url: string) => {
+      const data = url.includes("getAccessToken")
+        ? { accessToken: "t", accessTokenExpiryDate: "2099-01-01" }
+        : url.includes("getInventoryByPid")
+          ? {
+              inventories: [{ countryCode: "CN", totalInventoryNum: 50 }],
+              variantInventories: [{ vid: "v1", inventory: [{ countryCode: "US", totalInventory: 12 }, { countryCode: "CN", totalInventory: 900 }] }],
+            }
+          : { pid: "p1", productNameEn: "Lamp", variants: [{ vid: "v1" }, { vid: "v2" }] };
+      return { json: async () => ok(data) } as Response;
+    });
+
+    const { getProductWithStock, stockByCountry } = await import("./client");
+    const p = await getProductWithStock("p1");
+    expect(stockByCountry(p.variants[0])).toEqual({ US: 12, CN: 900 });
+    expect(stockByCountry(p.variants[1])).toEqual({});
+  });
+
+  it("prend le stock global pour un produit à variante unique", async () => {
+    process.env.CJ_API_KEY = "k";
+    process.env.CJ_MIN_GAP_MS = "1";
+    vi.stubGlobal("fetch", async (url: string) => {
+      const data = url.includes("getAccessToken")
+        ? { accessToken: "t", accessTokenExpiryDate: "2099-01-01" }
+        : url.includes("getInventoryByPid")
+          ? { inventories: [{ countryCode: "US", totalInventoryNum: 264 }] }
+          : { pid: "p1", productNameEn: "Lamp", variants: [{ vid: "only" }] };
+      return { json: async () => ok(data) } as Response;
+    });
+
+    const { getProductWithStock, stockByCountry } = await import("./client");
+    const p = await getProductWithStock("p1");
+    expect(stockByCountry(p.variants[0])).toEqual({ US: 264 });
+  });
+});
+
 describe("helpers", () => {
   it("extrait le pid d'un lien CJ", async () => {
     const { extractPid } = await import("./client");

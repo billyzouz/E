@@ -1,5 +1,5 @@
 import { db } from "@/lib/db";
-import { getProduct, stockByCountry } from "@/lib/cj/client";
+import { getProductWithStock, stockByCountry } from "@/lib/cj/client";
 import { useDbTokenCache } from "@/lib/cj/token-cache";
 import { bulkUpdatePriceQuantity, type PriceQuantityUpdate } from "@/lib/ebay/inventory";
 import { getUserAccessToken } from "@/lib/ebay/token-store";
@@ -30,7 +30,7 @@ export async function syncStock() {
   for (const [pid, pidListings] of byPid) {
     report.products++;
     try {
-      const cj = await getProduct(pid);
+      const cj = await getProductWithStock(pid);
       const variants = new Map(cj.variants.map((v) => [v.vid, v]));
 
       for (const v of cj.variants) {

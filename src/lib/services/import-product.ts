@@ -2,7 +2,7 @@ import { db } from "@/lib/db";
 import {
   cheapestFreight,
   extractPid,
-  getProduct,
+  getProductWithStock,
   productImages,
   stockByCountry,
   type CjFreightOption,
@@ -90,7 +90,7 @@ export interface MarketResult {
  */
 export async function importCjProduct(linkOrPid: string, markets: Market[] = enabledMarkets()) {
   useDbTokenCache();
-  const p = await getProduct(extractPid(linkOrPid));
+  const p = await getProductWithStock(extractPid(linkOrPid));
   const picked = pickVariants(p);
   if (!picked.length) throw new Error(`« ${p.productNameEn} » : aucun stock chez CJ`);
 
