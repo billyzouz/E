@@ -13,7 +13,7 @@ const ITEMS: Omit<ConfigItem, "ok">[] = [
   { key: "APP_URL", label: "Adresse du site", group: "base" },
   { key: "CRON_SECRET", label: "Secret des tâches planifiées", group: "base" },
   { key: "CJ_API_KEY", label: "Clé API CJ Dropshipping", group: "cj" },
-  { key: "DEEPSEEK_API_KEY", label: "Clé API DeepSeek (rédaction des annonces)", group: "ia" },
+  { key: "AI_API_KEY", label: "Clé OpenRouter (rédaction des annonces)", group: "ia" },
   { key: "EBAY_CLIENT_ID", label: "eBay App ID", group: "ebay" },
   { key: "EBAY_CLIENT_SECRET", label: "eBay Cert ID", group: "ebay" },
   { key: "EBAY_RUNAME", label: "eBay RuName", group: "ebay" },

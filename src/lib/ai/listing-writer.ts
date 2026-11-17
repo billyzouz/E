@@ -1,6 +1,6 @@
 import { z } from "zod";
 import type { Market } from "@/lib/markets";
-import { chatJson } from "./deepseek";
+import { chatJson } from "./llm";
 
 export interface ListingSource {
   nameEn: string;

@@ -122,7 +122,7 @@ export default async function Overview() {
           {[
             ["Trouver", "Les produits CJ les mieux notés sur tes niches."],
             ["Importer", "Pour chaque pays, l'entrepôt CJ qui livre le plus vite est choisi."],
-            ["Rédiger", "DeepSeek écrit l'annonce dans la langue du pays."],
+            ["Rédiger", "L'IA (DeepSeek via OpenRouter) écrit l'annonce dans la langue du pays."],
             ["Vendre", "Commande eBay → commande CJ → suivi renvoyé à eBay."],
           ].map(([t, d], i) => (
             <li key={t} className="flex gap-3">

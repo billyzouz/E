@@ -10,7 +10,7 @@ pas d'extension navigateur, pas de robot qui clique, pas d'« anti-ban ».
 | Trouver | Recherche dans le catalogue CJ, niches de départ par région, note sur 100 (popularité, stock, prix, stock vérifié). Import d'un clic ou des N meilleurs en arrière-plan |
 | Importer | Pour chacun des 8 pays (US, UK, DE, FR, IT, ES, AU, CA), teste les entrepôts CJ qui ont du stock et garde **le plus rapide** (puis le moins cher). Pays écarté si rien n'arrive en `MAX_DELIVERY_DAYS` |
 | Prix | Coût + port convertis dans la devise du pays (taux BCE + marge de sécurité), `(coût + port + frais fixe) / (1 − frais eBay − marge)`, arrondi en ,99, bénéfice minimum garanti |
-| Rédiger | DeepSeek (`deepseek-flash`) écrit titre, description et caractéristiques dans la langue du pays, avec les noms de caractéristiques eBay locaux |
+| Rédiger | DeepSeek V4.1 Flash via OpenRouter écrit titre, description et caractéristiques dans la langue du pays, avec les noms de caractéristiques eBay locaux |
 | Publier | Une annonce à variantes par produit et par pays (Inventory API). Catégorie trouvée automatiquement, politiques vendeur retrouvées automatiquement, lieu d'expédition = vrai entrepôt CJ |
 | Stock / prix | Relit CJ et met à jour chaque pays ; rupture dans l'entrepôt = quantité 0 |
 | Commandes | Commande eBay payée → commande CJ (depuis l'entrepôt du pays) → suivi renvoyé à eBay |
@@ -44,8 +44,8 @@ pas d'extension navigateur, pas de robot qui clique, pas d'« anti-ban ».
 - Clé API dans *Mon compte → API*. Limite : 1 appel/s, gérée par l'appli (token gardé en base).
 - `CJ_AUTO_PAY=true` pour payer les commandes avec le solde CJ.
 
-### DeepSeek
-- Clé sur platform.deepseek.com → `DEEPSEEK_API_KEY`.
+### IA (OpenRouter)
+- Clé sur openrouter.ai → Keys → `AI_API_KEY`. Modèle : `AI_MODEL` (défaut `deepseek/deepseek-v4.1-flash`).
 
 ## Planification
 Le plan gratuit de Vercel limite les tâches planifiées à une par jour. Un planificateur externe (Supabase `pg_cron`)

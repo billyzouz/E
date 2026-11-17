@@ -98,9 +98,9 @@ export async function createJob(params: FinderParams & { count: number }) {
   return data.id as string;
 }
 
-/** Si la clé DeepSeek est configurée, l'IA rédige les annonces des pays retenus. */
+/** Si la clé IA est configurée, l'IA rédige les annonces des pays retenus. */
 async function writeListingsFor(pid: string, log: string[]) {
-  if (!process.env.DEEPSEEK_API_KEY) return;
+  if (!process.env.AI_API_KEY) return;
   const { data: drafts } = await db().from("market_listings").select("id, marketplace").eq("cj_pid", pid).eq("status", "draft");
   for (const d of drafts ?? []) {
     try {
