@@ -8,9 +8,16 @@ const BASE = "https://developers.cjdropshipping.com/api2.0/v1";
 
 interface CjEnvelope<T> {
   code: number;
-  result: boolean;
+  result?: boolean;
+  success?: boolean; // certains appels CJ (ex : inventaire) renvoient "success" au lieu de "result"
   message: string;
   data: T;
+}
+
+/** Réponse réussie : CJ utilise selon les appels "result", "success" ou seulement code 200. */
+export function isCjSuccess(json: { code?: number; result?: boolean; success?: boolean }): boolean {
+  if (json.result === false || json.success === false) return false;
+  return json.result === true || json.success === true || json.code === 200;
 }
 
 /**
@@ -80,7 +87,7 @@ async function getAccessToken(): Promise<string> {
       body: JSON.stringify({ apiKey: requireEnv("CJ_API_KEY") }),
     },
   );
-  if (!json.result) throw new Error(`CJ auth : ${json.message}`);
+  if (!isCjSuccess(json)) throw new Error(`CJ auth : ${json.message}`);
   memoryToken = { value: json.data.accessToken, expiresAt: Date.parse(json.data.accessTokenExpiryDate) };
   await tokenCache?.save(memoryToken).catch(() => undefined);
   return memoryToken.value;
@@ -91,7 +98,7 @@ export async function cjFetch<T>(path: string, init: RequestInit = {}): Promise<
   headers.set("CJ-Access-Token", await getAccessToken());
   if (init.body) headers.set("Content-Type", "application/json");
   const json = await cjRequest<T>(`${BASE}${path}`, { ...init, headers });
-  if (!json.result) throw new Error(`CJ ${path} : ${json.code} ${json.message}`);
+  if (!isCjSuccess(json)) throw new Error(`CJ ${path} : ${json.code} ${json.message}`);
   return json.data;
 }
 

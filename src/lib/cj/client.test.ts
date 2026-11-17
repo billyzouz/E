@@ -84,7 +84,8 @@ describe("getProductWithStock", () => {
               variantInventories: [{ vid: "v1", inventory: [{ countryCode: "US", totalInventory: 12 }, { countryCode: "CN", totalInventory: 900 }] }],
             }
           : { pid: "p1", productNameEn: "Lamp", variants: [{ vid: "v1" }, { vid: "v2" }] };
-      return { json: async () => ok(data) } as Response;
+      const body = url.includes("getInventoryByPid") ? { success: true, code: 200, message: "", data } : ok(data);
+      return { json: async () => body } as Response;
     });
 
     const { getProductWithStock, stockByCountry } = await import("./client");
@@ -108,6 +109,17 @@ describe("getProductWithStock", () => {
     const { getProductWithStock, stockByCountry } = await import("./client");
     const p = await getProductWithStock("p1");
     expect(stockByCountry(p.variants[0])).toEqual({ US: 264 });
+  });
+});
+
+describe("isCjSuccess", () => {
+  it("accepte les deux formats de réponse CJ", async () => {
+    const { isCjSuccess } = await import("./client");
+    expect(isCjSuccess({ code: 200, result: true })).toBe(true);
+    expect(isCjSuccess({ code: 200, success: true })).toBe(true); // format de l'appel d'inventaire
+    expect(isCjSuccess({ code: 200 })).toBe(true);
+    expect(isCjSuccess({ code: 1600200, result: false })).toBe(false);
+    expect(isCjSuccess({ code: 200, success: false })).toBe(false);
   });
 });
 
