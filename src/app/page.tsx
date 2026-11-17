@@ -1,5 +1,6 @@
 import Link from "next/link";
-import { AlertTriangle, Boxes, Globe2, Package, ShoppingCart, Wallet } from "lucide-react";
+import { AlertTriangle, Bot, Boxes, Globe2, Package, ShoppingCart, Wallet } from "lucide-react";
+import { loadSettings, loadState } from "@/lib/autopilot";
 import { Badge, Card, CardTitle, PageHeader, Stat, buttonClass, flag, money } from "@/components/ui";
 import { configStatus, hasDb } from "@/lib/config-status";
 import { db } from "@/lib/db";
@@ -27,6 +28,7 @@ export default async function Overview() {
     if (o.currency) revenue.set(o.currency, (revenue.get(o.currency) ?? 0) + Number(o.total ?? 0));
   }
   const toHandle = (orders ?? []).filter((o) => o.status === "manual" || o.status === "error").length;
+  const [autopilot, autopilotState] = await Promise.all([loadSettings(), loadState()]);
 
   return (
     <>
@@ -34,8 +36,15 @@ export default async function Overview() {
         title="Vue d'ensemble"
         subtitle="Ton activité sur les 8 marchés eBay"
         action={
-          <Link href="/recherche" className={buttonClass.primary}>
-            Trouver des produits
+          <Link
+            href="/reglages"
+            className={autopilot.enabled ? buttonClass.secondary : buttonClass.primary}
+            title="Réglages du pilote automatique"
+          >
+            <Bot className={autopilot.enabled ? "h-4 w-4 text-emerald-400" : "h-4 w-4"} />
+            {autopilot.enabled
+              ? `Pilote ON · ${autopilotState.imported}/${autopilot.importsPerDay} imports · ${autopilotState.published}/${autopilot.publishesPerDay} publications aujourd'hui`
+              : "Activer le pilote automatique"}
           </Link>
         }
       />

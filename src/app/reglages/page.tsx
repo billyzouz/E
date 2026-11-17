@@ -4,6 +4,8 @@ import { configStatus, hasDb } from "@/lib/config-status";
 import { db } from "@/lib/db";
 import { MARKETS, enabledMarkets } from "@/lib/markets";
 import { rulesFromEnv } from "@/lib/pricing";
+import { loadSettings, loadState } from "@/lib/autopilot";
+import { AutopilotPanel } from "./autopilot-panel";
 
 export const dynamic = "force-dynamic";
 
@@ -20,6 +22,7 @@ export default async function ReglagesPage() {
   const rules = rulesFromEnv();
   const account = hasDb() ? (await db().from("ebay_accounts").select("environment, updated_at").limit(1).maybeSingle()).data : null;
   const ebayReady = status.filter((s) => s.group === "ebay").every((s) => s.ok);
+  const [autopilot, autopilotState] = hasDb() ? await Promise.all([loadSettings(), loadState()]) : [null, null];
 
   return (
     <>
@@ -27,6 +30,12 @@ export default async function ReglagesPage() {
         title="Réglages"
         subtitle="Les clés se mettent dans Vercel → Settings → Environment Variables, puis il faut redéployer."
       />
+
+      {autopilot && autopilotState && (
+        <div className="mb-6">
+          <AutopilotPanel initial={autopilot} state={autopilotState} />
+        </div>
+      )}
 
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
         <Card>

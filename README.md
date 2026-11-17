@@ -47,14 +47,28 @@ pas d'extension navigateur, pas de robot qui clique, pas d'« anti-ban ».
 ### IA (OpenRouter)
 - Clé sur openrouter.ai → Keys → `AI_API_KEY`. Modèle : `AI_MODEL` (défaut `deepseek/deepseek-v4.1-flash`).
 
+## Pilote automatique
+Réglages → Pilote automatique (interrupteur, quotas, niches). À chaque passage, dans la limite de 4 min :
+1. publie les annonces prêtes (quota `publishesPerDay`, 1 annonce = 1 pays) ;
+2. fait rédiger les brouillons par l'IA ;
+3. importe le meilleur produit neuf (note ≥ `minScore`) de la niche suivante (rotation, quota `importsPerDay`).
+
+Un verrou empêche deux passages simultanés. Les compteurs repartent à zéro chaque jour (UTC).
+
 ## Planification
-Le plan gratuit de Vercel limite les tâches planifiées à une par jour. Un planificateur externe (Supabase `pg_cron`)
-doit appeler avec `Authorization: Bearer <CRON_SECRET>` :
-- `GET /api/cron/sync-orders` toutes les 15 min
-- `GET /api/cron/sync-stock` toutes les 6 h
+Le plan gratuit de Vercel limite ses crons à 1/jour : c'est Supabase (`pg_cron` + `pg_net`, migration 0004) qui appelle
+l'appli avec `Authorization: Bearer <CRON_SECRET>` :
+- `/api/cron/sync-orders` toutes les 15 min
+- `/api/cron/autopilot` à :05, :25 et :45
+- `/api/cron/sync-stock` toutes les 6 h
+
+L'adresse et le secret sont lus dans le coffre Supabase, à créer une fois dans le SQL Editor :
+```sql
+select vault.create_secret('https://ton-app.vercel.app', 'app_url');
+select vault.create_secret('<valeur de CRON_SECRET>', 'cron_secret');
+```
 
 ## Reste à faire
-- Pilote automatique (import → IA → publication en continu, dans la limite du compte) + planificateur.
 - Valider chaque niche avec les données eBay du pays (API Browse : prix pratiqués, nombre de concurrents).
 - Vérifier la signature des notifications de suppression eBay avant la production.
 
