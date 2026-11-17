@@ -102,11 +102,23 @@ export const buttonClass = {
 export const inputClass =
   "w-full rounded-xl border border-zinc-800 bg-zinc-950/60 px-3.5 py-2 text-sm text-zinc-100 placeholder:text-zinc-600 outline-none transition focus:border-accent focus:ring-2 focus:ring-accent/30";
 
-/** Drapeau emoji d'un pays (code ISO à 2 lettres). */
+/** Drapeau d'un pays en image (les drapeaux emoji ne s'affichent pas sous Windows). */
+export function Flag({ country, className }: { country: string; className?: string }) {
+  const code = country.toLowerCase();
+  return (
+    <img
+      src={`https://flagcdn.com/w40/${code}.png`}
+      srcSet={`https://flagcdn.com/w80/${code}.png 2x`}
+      alt={country.toUpperCase()}
+      width={20}
+      height={15}
+      className={cx("inline-block h-[15px] w-5 rounded-[3px] object-cover align-[-2px] ring-1 ring-white/10", className)}
+    />
+  );
+}
+
 export function flag(country: string) {
-  return country
-    .toUpperCase()
-    .replace(/./g, (c) => String.fromCodePoint(127397 + c.charCodeAt(0)));
+  return <Flag country={country} />;
 }
 
 export function money(value: number | string | null | undefined, currency = "EUR") {

@@ -8,14 +8,14 @@ import type { Candidate } from "@/lib/services/finder";
 
 const WAREHOUSES = [
   { code: "", label: "Tous les entrepôts" },
-  { code: "US", label: "🇺🇸 États-Unis" },
-  { code: "GB", label: "🇬🇧 Royaume-Uni" },
-  { code: "DE", label: "🇩🇪 Allemagne" },
-  { code: "FR", label: "🇫🇷 France" },
-  { code: "ES", label: "🇪🇸 Espagne" },
-  { code: "IT", label: "🇮🇹 Italie" },
-  { code: "AU", label: "🇦🇺 Australie" },
-  { code: "CN", label: "🇨🇳 Chine" },
+  { code: "US", label: "États-Unis" },
+  { code: "GB", label: "Royaume-Uni" },
+  { code: "DE", label: "Allemagne" },
+  { code: "FR", label: "France" },
+  { code: "ES", label: "Espagne" },
+  { code: "IT", label: "Italie" },
+  { code: "AU", label: "Australie" },
+  { code: "CN", label: "Chine" },
 ];
 
 interface Job {
