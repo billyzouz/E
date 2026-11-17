@@ -37,7 +37,9 @@ async function forwardNewOrders(token: string) {
     const { error: insertError } = await db().from("orders").insert({
       ebay_order_id: o.orderId,
       buyer: o.buyer.username,
-      total_eur: Number(o.pricingSummary.total.value),
+      total: Number(o.pricingSummary.total.value),
+      currency: o.pricingSummary.total.currency,
+      marketplace: o.lineItems[0]?.listingMarketplaceId ?? null,
       raw: o,
     });
     if (insertError) {
@@ -64,11 +66,23 @@ async function forwardNewOrders(token: string) {
 /** Renvoie l'ID de commande CJ, ou null si la commande doit être traitée à la main. */
 async function placeCjOrder(o: EbayOrder): Promise<string | null> {
   const skus = o.lineItems.map((l) => l.sku).filter((s): s is string => !!s);
-  const { data: products } = await db()
-    .from("products")
-    .select("sku, cj_vid, logistic_name, ship_from")
+  const { data: offers } = await db()
+    .from("market_offers")
+    .select("sku, product:products(cj_vid), listing:market_listings(ship_from, logistic_name)")
     .in("sku", skus);
-  const bySku = new Map((products ?? []).map((p) => [p.sku, p]));
+  type Row = { sku: string; cj_vid: string; ship_from: string; logistic_name: string };
+  const one = <T,>(x: T | T[]) => (Array.isArray(x) ? x[0] : x);
+  const bySku = new Map<string, Row>(
+    (offers ?? []).map((o) => [
+      o.sku,
+      {
+        sku: o.sku,
+        cj_vid: one(o.product as { cj_vid: string } | { cj_vid: string }[]).cj_vid,
+        ship_from: one(o.listing as { ship_from: string } | { ship_from: string }[]).ship_from,
+        logistic_name: one(o.listing as { logistic_name: string } | { logistic_name: string }[]).logistic_name,
+      },
+    ]),
+  );
 
   const toManual = async (reason: string) => {
     await db().from("orders").update({ status: "manual", last_error: reason }).eq("ebay_order_id", o.orderId);

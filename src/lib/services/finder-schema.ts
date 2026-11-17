@@ -1,10 +1,12 @@
 import { z } from "zod";
 
+const WAREHOUSES = ["CN", "US", "GB", "DE", "FR", "ES", "IT", "PL", "CZ", "NL", "AU", "CA"] as const;
+
 export const FinderBody = z.object({
   keyword: z.string().trim().max(100).optional(),
-  shipFrom: z.enum(["CN", "FR", "DE", "ES", "IT", "PL", "GB", "US"]).optional(),
-  minCostEur: z.coerce.number().min(0).optional(),
-  maxCostEur: z.coerce.number().min(0).optional(),
+  warehouse: z.enum(WAREHOUSES).or(z.literal("")).optional(),
+  minCostUsd: z.coerce.number().min(0).optional(),
+  maxCostUsd: z.coerce.number().min(0).optional(),
   minStock: z.coerce.number().int().min(0).optional(),
 });
 

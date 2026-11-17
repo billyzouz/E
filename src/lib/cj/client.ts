@@ -123,8 +123,18 @@ export interface CjProduct {
   sellPrice: string | number;
   description: string; // HTML
   categoryName: string;
+  productKeyEn?: string; // noms des options, ex "Color-Size"
   listedNum?: number;
   variants: CjVariant[];
+}
+
+/** Pays où la variante a du stock chez CJ, avec la quantité. */
+export function stockByCountry(v: CjVariant): Record<string, number> {
+  const out: Record<string, number> = {};
+  for (const i of v.inventories ?? []) {
+    if (i.totalInventory > 0) out[i.countryCode] = (out[i.countryCode] ?? 0) + i.totalInventory;
+  }
+  return out;
 }
 
 export function getProduct(pid: string) {

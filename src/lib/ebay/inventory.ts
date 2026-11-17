@@ -1,73 +1,126 @@
-import { requireEnv } from "@/lib/env";
+import type { Market } from "@/lib/markets";
 import { ebayFetch } from "./client";
-import { marketplace } from "./config";
 
-export interface ListingDraft {
+/**
+ * Inventory API eBay : une annonce à variantes =
+ * 1 article d'inventaire par variante (SKU) + 1 groupe + 1 offre par SKU, puis publication du groupe.
+ */
+
+export interface VariantDraft {
   sku: string;
-  title: string; // 80 caractères max chez eBay
-  descriptionHtml: string;
-  imageUrls: string[]; // 24 max
-  aspects: Record<string, string[]>; // ex { Marque: ["Sans marque"], Couleur: ["Noir"] }
-  categoryId: string;
+  aspects: Record<string, string[]>; // inclut les options de la variante, ex { Color: ["Black"] }
+  imageUrls: string[];
   quantity: number;
   price: number;
+  offerId?: string | null;
 }
 
-/** Crée ou remplace l'article d'inventaire (le "produit" côté eBay). */
-export function upsertInventoryItem(token: string, d: ListingDraft) {
-  return ebayFetch<void>(token, `/sell/inventory/v1/inventory_item/${encodeURIComponent(d.sku)}`, {
+export interface GroupDraft {
+  groupKey: string;
+  title: string; // 80 caractères max
+  descriptionHtml: string;
+  imageUrls: string[];
+  aspects: Record<string, string[]>; // communs à toutes les variantes
+  variesBy: { name: string; values: string[] }[]; // vide si une seule variante
+  categoryId: string;
+  merchantLocationKey: string;
+  policies: { fulfillmentPolicyId: string; paymentPolicyId: string; returnPolicyId: string };
+  variants: VariantDraft[];
+}
+
+const opts = (m: Market) => ({ marketplaceId: m.id, contentLanguage: m.language });
+
+export function upsertInventoryItem(token: string, m: Market, g: GroupDraft, v: VariantDraft) {
+  return ebayFetch<void>(token, `/sell/inventory/v1/inventory_item/${encodeURIComponent(v.sku)}`, {
+    ...opts(m),
     method: "PUT",
     body: JSON.stringify({
-      availability: { shipToLocationAvailability: { quantity: d.quantity } },
+      availability: { shipToLocationAvailability: { quantity: v.quantity } },
       condition: "NEW",
       product: {
-        title: d.title.slice(0, 80),
-        description: d.descriptionHtml,
-        aspects: d.aspects,
-        imageUrls: d.imageUrls.slice(0, 24),
+        title: g.title.slice(0, 80),
+        description: g.descriptionHtml,
+        aspects: { ...g.aspects, ...v.aspects },
+        imageUrls: v.imageUrls.slice(0, 24),
       },
     }),
   });
 }
 
-/** Crée l'offre (prix, catégorie, politiques) liée au SKU. Renvoie l'offerId. */
-export async function createOffer(token: string, d: ListingDraft): Promise<string> {
-  const m = marketplace();
-  const res = await ebayFetch<{ offerId: string }>(token, "/sell/inventory/v1/offer", {
-    method: "POST",
+export function upsertGroup(token: string, m: Market, g: GroupDraft) {
+  return ebayFetch<void>(token, `/sell/inventory/v1/inventory_item_group/${encodeURIComponent(g.groupKey)}`, {
+    ...opts(m),
+    method: "PUT",
     body: JSON.stringify({
-      sku: d.sku,
-      marketplaceId: m.id,
-      format: "FIXED_PRICE",
-      availableQuantity: d.quantity,
-      categoryId: d.categoryId,
-      listingDescription: d.descriptionHtml,
-      merchantLocationKey: requireEnv("EBAY_MERCHANT_LOCATION_KEY"),
-      listingPolicies: {
-        fulfillmentPolicyId: requireEnv("EBAY_FULFILLMENT_POLICY_ID"),
-        paymentPolicyId: requireEnv("EBAY_PAYMENT_POLICY_ID"),
-        returnPolicyId: requireEnv("EBAY_RETURN_POLICY_ID"),
+      inventoryItemGroupKey: g.groupKey,
+      title: g.title.slice(0, 80),
+      description: g.descriptionHtml,
+      imageUrls: g.imageUrls.slice(0, 12),
+      aspects: g.aspects,
+      variantSKUs: g.variants.map((v) => v.sku),
+      variesBy: {
+        aspectsImageVariesBy: g.variesBy.length ? [g.variesBy[0].name] : [],
+        specifications: g.variesBy,
       },
-      pricingSummary: { price: { value: d.price.toFixed(2), currency: m.currency } },
     }),
+  });
+}
+
+function offerBody(m: Market, g: GroupDraft, v: VariantDraft) {
+  return {
+    sku: v.sku,
+    marketplaceId: m.id,
+    format: "FIXED_PRICE",
+    availableQuantity: v.quantity,
+    categoryId: g.categoryId,
+    listingDescription: g.descriptionHtml,
+    merchantLocationKey: g.merchantLocationKey,
+    listingPolicies: g.policies,
+    pricingSummary: { price: { value: v.price.toFixed(2), currency: m.currency } },
+  };
+}
+
+/** Crée l'offre, ou la met à jour si elle existe déjà. Renvoie l'offerId. */
+export async function upsertOffer(token: string, m: Market, g: GroupDraft, v: VariantDraft): Promise<string> {
+  if (v.offerId) {
+    await ebayFetch(token, `/sell/inventory/v1/offer/${v.offerId}`, {
+      ...opts(m),
+      method: "PUT",
+      body: JSON.stringify(offerBody(m, g, v)),
+    });
+    return v.offerId;
+  }
+  const res = await ebayFetch<{ offerId: string }>(token, "/sell/inventory/v1/offer", {
+    ...opts(m),
+    method: "POST",
+    body: JSON.stringify(offerBody(m, g, v)),
   });
   return res.offerId;
 }
 
-/** Met l'annonce en ligne. Renvoie le listingId (l'ID visible sur eBay). */
-export async function publishOffer(token: string, offerId: string): Promise<string> {
-  const res = await ebayFetch<{ listingId: string }>(token, `/sell/inventory/v1/offer/${offerId}/publish`, {
-    method: "POST",
-  });
-  return res.listingId;
-}
+/** Publie l'annonce (à variantes ou non). Renvoie le listingId eBay et les offerId par SKU. */
+export async function publishGroup(token: string, m: Market, g: GroupDraft) {
+  for (const v of g.variants) await upsertInventoryItem(token, m, g, v);
 
-/** Chaîne complète : article → offre → publication. */
-export async function publishListing(token: string, d: ListingDraft) {
-  await upsertInventoryItem(token, d);
-  const offerId = await createOffer(token, d);
-  const listingId = await publishOffer(token, offerId);
-  return { offerId, listingId };
+  const offerIds: Record<string, string> = {};
+  for (const v of g.variants) offerIds[v.sku] = await upsertOffer(token, m, g, v);
+
+  if (g.variants.length === 1) {
+    const only = g.variants[0];
+    const res = await ebayFetch<{ listingId: string }>(token, `/sell/inventory/v1/offer/${offerIds[only.sku]}/publish`, {
+      ...opts(m),
+      method: "POST",
+    });
+    return { listingId: res.listingId, offerIds };
+  }
+
+  await upsertGroup(token, m, g);
+  const res = await ebayFetch<{ listingId: string }>(token, "/sell/inventory/v1/offer/publish_by_inventory_item_group", {
+    ...opts(m),
+    method: "POST",
+    body: JSON.stringify({ inventoryItemGroupKey: g.groupKey, marketplaceId: m.id }),
+  });
+  return { listingId: res.listingId, offerIds };
 }
 
 export interface PriceQuantityUpdate {
@@ -75,11 +128,11 @@ export interface PriceQuantityUpdate {
   offerId: string;
   quantity: number;
   price?: number;
+  currency?: string;
 }
 
-/** Met à jour stock et prix de plusieurs annonces (25 max par appel). */
+/** Met à jour stock et prix de plusieurs offres (25 max par appel). */
 export async function bulkUpdatePriceQuantity(token: string, updates: PriceQuantityUpdate[]) {
-  const m = marketplace();
   for (let i = 0; i < updates.length; i += 25) {
     const chunk = updates.slice(i, i + 25);
     await ebayFetch(token, "/sell/inventory/v1/bulk_update_price_quantity", {
@@ -92,7 +145,9 @@ export async function bulkUpdatePriceQuantity(token: string, updates: PriceQuant
             {
               offerId: u.offerId,
               availableQuantity: u.quantity,
-              ...(u.price !== undefined ? { price: { value: u.price.toFixed(2), currency: m.currency } } : {}),
+              ...(u.price !== undefined && u.currency
+                ? { price: { value: u.price.toFixed(2), currency: u.currency } }
+                : {}),
             },
           ],
         })),

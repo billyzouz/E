@@ -20,7 +20,7 @@ export interface EbayOrder {
   orderPaymentStatus: string;
   buyer: { username: string };
   pricingSummary: { total: { value: string; currency: string } };
-  lineItems: { lineItemId: string; sku?: string; title: string; quantity: number }[];
+  lineItems: { lineItemId: string; sku?: string; title: string; quantity: number; listingMarketplaceId?: string }[];
   fulfillmentStartInstructions: { shippingStep: { shipTo: EbayAddress } }[];
 }
 

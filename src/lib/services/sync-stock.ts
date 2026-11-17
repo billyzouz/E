@@ -1,47 +1,68 @@
 import { db } from "@/lib/db";
-import { getProduct, variantStock } from "@/lib/cj/client";
-import { usdToEur } from "@/lib/cj/currency";
+import { getProduct, stockByCountry } from "@/lib/cj/client";
 import { useDbTokenCache } from "@/lib/cj/token-cache";
 import { bulkUpdatePriceQuantity, type PriceQuantityUpdate } from "@/lib/ebay/inventory";
 import { getUserAccessToken } from "@/lib/ebay/token-store";
+import { usdTo } from "@/lib/fx";
+import { getMarket } from "@/lib/markets";
 import { computeSellPrice, rulesFromEnv } from "@/lib/pricing";
-import { listedQuantity } from "./publish-product";
+import { listedQuantity } from "./import-product";
 
 /**
- * Relit stock et prix chez CJ pour chaque annonce en ligne (1 appel CJ par produit,
- * toutes variantes comprises), puis pousse les changements sur eBay.
- * Rupture fournisseur ou variante supprimée => quantité 0.
+ * Relit chez CJ le stock et le prix de chaque produit en vente (1 appel CJ par produit, tous pays confondus),
+ * recalcule prix et quantités par pays, puis pousse les changements sur eBay.
+ * Rupture dans l'entrepôt du pays ou variante supprimée => quantité 0.
  */
 export async function syncStock() {
   useDbTokenCache();
-  const { data: products, error } = await db().from("products").select("*").eq("status", "listed");
+  const { data: listings, error } = await db()
+    .from("market_listings")
+    .select("id, cj_pid, marketplace, ship_from, offers:market_offers(*, product:products(cj_vid))")
+    .eq("status", "listed");
   if (error) throw error;
 
   const rules = rulesFromEnv();
-  const productCache = new Map<string, Awaited<ReturnType<typeof getProduct>>>();
   const updates: PriceQuantityUpdate[] = [];
-  const report = { checked: 0, changed: 0, errors: [] as string[] };
+  const report = { products: 0, offersChanged: 0, errors: [] as string[] };
+  const byPid = new Map<string, typeof listings>();
+  for (const l of listings ?? []) byPid.set(l.cj_pid, [...(byPid.get(l.cj_pid) ?? []), l]);
 
-  for (const p of products ?? []) {
-    report.checked++;
+  for (const [pid, pidListings] of byPid) {
+    report.products++;
     try {
-      if (!productCache.has(p.cj_pid)) productCache.set(p.cj_pid, await getProduct(p.cj_pid));
-      const variant = productCache.get(p.cj_pid)!.variants.find((v) => v.vid === p.cj_vid);
-      const stock = variant ? variantStock(variant, p.ship_from) : 0;
-      const quantity = listedQuantity(stock);
-      const cost = variant ? usdToEur(variant.variantSellPrice) : Number(p.cost_eur);
-      const price = computeSellPrice(cost, Number(p.shipping_eur), rules).price;
+      const cj = await getProduct(pid);
+      const variants = new Map(cj.variants.map((v) => [v.vid, v]));
 
-      if (quantity !== listedQuantity(p.stock) || price !== Number(p.price_eur)) {
-        updates.push({ sku: p.sku, offerId: p.ebay_offer_id, quantity, price });
-        report.changed++;
+      for (const v of cj.variants) {
+        await db()
+          .from("products")
+          .update({ cost_usd: v.variantSellPrice, stock_by_country: stockByCountry(v), last_synced_at: new Date().toISOString() })
+          .eq("cj_vid", v.vid);
       }
-      await db()
-        .from("products")
-        .update({ stock, cost_eur: cost, price_eur: price, last_synced_at: new Date().toISOString() })
-        .eq("id", p.id);
+
+      for (const l of pidListings) {
+        const market = getMarket(l.marketplace);
+        const marketRules = { ...rules, ebayFixedFee: market.fixedFee };
+        for (const o of l.offers as { id: string; sku: string; ebay_offer_id: string | null; quantity: number; price: number; shipping_cost: number; product: { cj_vid: string } }[]) {
+          const v = variants.get(o.product.cj_vid);
+          const quantity = v ? listedQuantity(stockByCountry(v)[l.ship_from] ?? 0) : 0;
+          const cost = v ? await usdTo(market.currency, v.variantSellPrice) : null;
+          const price = cost !== null ? computeSellPrice(cost, Number(o.shipping_cost), marketRules).price : Number(o.price);
+
+          if (quantity !== o.quantity || price !== Number(o.price)) {
+            await db()
+              .from("market_offers")
+              .update({ quantity, price, ...(cost !== null ? { cost } : {}) })
+              .eq("id", o.id);
+            if (o.ebay_offer_id) {
+              updates.push({ sku: o.sku, offerId: o.ebay_offer_id, quantity, price, currency: market.currency });
+            }
+            report.offersChanged++;
+          }
+        }
+      }
     } catch (e) {
-      report.errors.push(`${p.sku}: ${String(e)}`);
+      report.errors.push(`${pid}: ${e instanceof Error ? e.message : String(e)}`);
     }
   }
 

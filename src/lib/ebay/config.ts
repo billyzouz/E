@@ -27,11 +27,3 @@ export function ebayCredentials() {
     ruName: requireEnv("EBAY_RUNAME"),
   };
 }
-
-export function marketplace() {
-  return {
-    id: process.env.EBAY_MARKETPLACE_ID || "EBAY_FR",
-    currency: process.env.EBAY_CURRENCY || "EUR",
-    contentLanguage: process.env.EBAY_CONTENT_LANGUAGE || "fr-FR",
-  };
-}
