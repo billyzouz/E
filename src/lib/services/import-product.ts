@@ -22,9 +22,16 @@ export async function importCjProduct(linkOrPid: string, shipTo = "FR") {
   const fromCountry = process.env.CJ_FROM_COUNTRY || "CN";
   const images = productImages(p);
 
+  // Le port dépend surtout du poids : un seul calcul par poids distinct, pour économiser les appels CJ.
+  const freightByWeight = new Map<number, Awaited<ReturnType<typeof cheapestFreight>>>();
+
   const rows = [];
   for (const v of p.variants) {
-    const freight = await cheapestFreight({ fromCountry, toCountry: shipTo, vid: v.vid, quantity: 1 });
+    let freight = freightByWeight.get(v.variantWeight);
+    if (!freight) {
+      freight = await cheapestFreight({ fromCountry, toCountry: shipTo, vid: v.vid, quantity: 1 });
+      freightByWeight.set(v.variantWeight, freight);
+    }
     const cost = usdToEur(v.variantSellPrice);
     const shipping = usdToEur(freight.logisticPrice);
     const price = computeSellPrice(cost, shipping, rules);

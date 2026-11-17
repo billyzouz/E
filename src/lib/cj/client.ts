@@ -17,14 +17,50 @@ interface CjEnvelope<T> {
 
 let cachedToken: { value: string; expiresAt: number } | null = null;
 
+/**
+ * Limite de débit CJ : 1 requête/seconde sur le compte gratuit (code 1600200).
+ * On espace tous les appels d'au moins MIN_GAP_MS, et on réessaie si CJ refuse quand même.
+ */
+const MIN_GAP_MS = Number(process.env.CJ_MIN_GAP_MS || "1100");
+const RATE_LIMIT_CODE = 1600200;
+let queue: Promise<unknown> = Promise.resolve();
+let lastCallAt = 0;
+
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+/** Exécute les appels CJ un par un, espacés d'au moins MIN_GAP_MS. */
+function throttled<T>(fn: () => Promise<T>): Promise<T> {
+  const run = queue.then(async () => {
+    const wait = lastCallAt + MIN_GAP_MS - Date.now();
+    if (wait > 0) await sleep(wait);
+    try {
+      return await fn();
+    } finally {
+      lastCallAt = Date.now();
+    }
+  });
+  queue = run.catch(() => undefined);
+  return run;
+}
+
+async function cjRequest<T>(url: string, init: RequestInit): Promise<CjEnvelope<T>> {
+  for (let attempt = 0; ; attempt++) {
+    const json = await throttled(async () => (await (await fetch(url, init)).json()) as CjEnvelope<T>);
+    if (json.code !== RATE_LIMIT_CODE || attempt >= 3) return json;
+    await sleep(MIN_GAP_MS * (attempt + 2));
+  }
+}
+
 async function getAccessToken(): Promise<string> {
   if (cachedToken && cachedToken.expiresAt > Date.now() + 60_000) return cachedToken.value;
-  const res = await fetch(`${BASE}/authentication/getAccessToken`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ apiKey: requireEnv("CJ_API_KEY") }),
-  });
-  const json = (await res.json()) as CjEnvelope<{ accessToken: string; accessTokenExpiryDate: string }>;
+  const json = await cjRequest<{ accessToken: string; accessTokenExpiryDate: string }>(
+    `${BASE}/authentication/getAccessToken`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ apiKey: requireEnv("CJ_API_KEY") }),
+    },
+  );
   if (!json.result) throw new Error(`CJ auth : ${json.message}`);
   cachedToken = { value: json.data.accessToken, expiresAt: Date.parse(json.data.accessTokenExpiryDate) };
   return cachedToken.value;
@@ -34,8 +70,7 @@ export async function cjFetch<T>(path: string, init: RequestInit = {}): Promise<
   const headers = new Headers(init.headers);
   headers.set("CJ-Access-Token", await getAccessToken());
   if (init.body) headers.set("Content-Type", "application/json");
-  const res = await fetch(`${BASE}${path}`, { ...init, headers });
-  const json = (await res.json()) as CjEnvelope<T>;
+  const json = await cjRequest<T>(`${BASE}${path}`, { ...init, headers });
   if (!json.result) throw new Error(`CJ ${path} : ${json.code} ${json.message}`);
   return json.data;
 }
