@@ -10,7 +10,7 @@ pas d'extension navigateur, pas de robot qui clique, pas d'« anti-ban ».
 | Importer un produit | Lien CJ → fiche brouillon (titre, photos, variantes), coût + port calculés via l'API CJ |
 | Calculer le prix | `(coût + port + frais fixe eBay) / (1 − frais eBay − marge)`, arrondi en ,99, bénéfice minimum garanti (`src/lib/pricing.ts`) |
 | Publier sur eBay | Inventory API : article → offre → publication |
-| Synchroniser stock/prix | Toutes les 6 h : relit CJ, met à jour eBay ; rupture = quantité 0 |
+| Synchroniser stock/prix | Toutes les 6 h (planification à brancher, voir plus bas) : relit CJ, met à jour eBay ; rupture = quantité 0 |
 | Commandes | Toutes les 15 min : commande eBay payée → commande CJ ; numéro de suivi CJ → eBay |
 
 ## Règles eBay (à lire)
@@ -61,3 +61,11 @@ npm run build      # build de prod
 - Choix de catégorie eBay dans l'interface (l'API de suggestion est prête : `src/lib/ebay/taxonomy.ts`).
 - Bouton « Publier » dans le tableau de bord (la route `/api/products/publish` existe).
 - Recherche de produits gagnants.
+
+## Planification des synchros
+Le plan gratuit de Vercel limite les tâches planifiées à une par jour : on ne les déclare donc pas dans Vercel.
+À la place, un planificateur externe (Supabase `pg_cron` ou cron-job.org) appelle :
+- `GET /api/cron/sync-orders` toutes les 15 min
+- `GET /api/cron/sync-stock` toutes les 6 h
+
+avec l'en-tête `Authorization: Bearer <CRON_SECRET>`.
